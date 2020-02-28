@@ -6,15 +6,17 @@ services:
   #######################################
   kong-database:
     image: postgres:9.6
+    volumes:
+      - db-data:/var/lib/postgresql/data
     restart: always
     environment:
       POSTGRES_DB: kong
-      POSTGRES_USER: kong
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "kong"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -54,15 +56,36 @@ services:
       - "8001:8001"
       - "8444:8444"
 
-  #######################################
-  # pgadmin: postgres ui
-  #######################################
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    environment:
-      PGADMIN_LISTEN_PORT: 5050
-      PGADMIN_DEFAULT_EMAIL: root
-      PGADMIN_DEFAULT_PASSWORD: z
-    ports:
-      - "5050:5050"
 
+  #######################################
+  # Konga database prepare
+  #######################################
+  konga-prepare:
+    image: pantsel/konga:latest
+    command: "-c prepare -a postgres -u postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@kong-database:5432/konga_db"
+    restart: on-failure
+    depends_on:
+      - kong-database
+
+  #######################################
+  # Konga: Kong GUI
+  #######################################
+  konga:
+    image: pantsel/konga:latest
+    restart: always
+    environment:
+      DB_ADAPTER: postgres
+      DB_HOST: kong-database
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_DATABASE: konga_db
+      NO_AUTH: "true"
+      NODE_ENV: production
+    depends_on:
+      - kong-database
+      - konga-prepare
+    ports:
+      - "1337:1337"
+
+volumes:
+  db-data:
